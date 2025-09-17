@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
+import json
 from perceptron import Perceptron
 from loader_utils import load_table, preprocess_academic
 from utils import print_weight_matrix, evaluate_model
@@ -21,7 +22,7 @@ def list_files(folder, exts):
 
 
 DATA_PATH = "data"
-WEIGHTS_PATH = "."
+WEIGHTS_PATH = "pesos"
 
 # Sidebar: elegir modo
 mode = st.sidebar.selectbox("Modo", ["Entrenamiento", "Simulación"])
@@ -94,8 +95,14 @@ if mode == "Entrenamiento":
             st.write(f"Accuracy total: {acc*100:.2f}%")
 
             # guardar pesos
-            fname = model.save(f"{pesos_name}.json", epoch_record=best)
-            st.success(f"Pesos guardados en {fname}")
+            # fname = model.save(f"{pesos_name}.json", epoch_record=best)
+            # st.success(f"Pesos guardados en {fname}")
+            # guardar pesos en carpeta 'pesos'
+            os.makedirs(WEIGHTS_PATH, exist_ok=True)
+            fname = os.path.join(WEIGHTS_PATH, f"{pesos_name}.json")
+            model.save(fname, epoch_record=best)
+            st.success(f"Pesos y umbrales guardados exitosemente")
+
 
 
 elif mode == "Simulación":
