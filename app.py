@@ -86,7 +86,7 @@ if mode == "Entrenamiento":
             st.write("Pesos óptimos:", np.round(best["weights"], 2))
             st.write("Umbrales:", round(best["bias"], 2))
 
-            fig = plot_rms(result["history"], title=f"RMS - {dataset_name}")
+            fig = plot_rms(result["history"], max_error=error_max, converged_epoch=best['epoch'], dataset_name=dataset_name)
             st.pyplot(fig)
 
             # evaluar en todo el dataset
