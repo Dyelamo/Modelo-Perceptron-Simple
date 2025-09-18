@@ -3,157 +3,163 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-import json
 from perceptron import Perceptron
-from loader_utils import load_table, preprocess_academic
-from utils import print_weight_matrix, evaluate_model
-from visualize import plot_rms
+from loader_utils import cargar_tabla, preprocesar_academico
+from utils import evaluar_modelo
+from visualizar import graficar_error
 
-st.set_page_config(layout="wide", page_title="Perceptrón Simple - App")
-st.title("Perceptrón Simple — Interfaz")
+st.set_page_config(layout="wide", page_title="Perceptrón Simple")
+st.title("Modelo Perceptrón Simple — Interfaz Gráfica")
 
 # Función para listar archivos
-def list_files(folder, exts):
-    return [f for f in os.listdir(folder) if any(f.endswith(e) for e in exts)]
+def listar_archivos(carpeta, extensiones):
+    return [f for f in os.listdir(carpeta) if any(f.endswith(e) for e in extensiones)]
 
+# Rutas de carpetas
+CARPETA_DATOS = "data"
+CARPETA_PESOS = "pesos_optimos"
 
+# Menú lateral: elegir modo
+modo = st.sidebar.selectbox("Seleccionar modo", ["Entrenamiento", "Simulación"])
 
+# =====================================================
+# ENTRENAMIENTO
+# =====================================================
+if modo == "Entrenamiento":
+    st.header("Entrenamiento del Perceptrón")
 
+    # Selección del dataset
+    datasets = listar_archivos(CARPETA_DATOS, [".csv", ".json", ".xls", ".xlsx"])
+    dataset_nombre = st.selectbox("Selecciona un dataset", [""] + datasets)
 
-
-DATA_PATH = "data"
-WEIGHTS_PATH = "pesos"
-
-# Sidebar: elegir modo
-mode = st.sidebar.selectbox("Modo", ["Entrenamiento", "Simulación"])
-
-if mode == "Entrenamiento":
-    st.header("Entrenamiento")
-
-    # datasets = list_files(DATA_PATH, ".csv")
-    # en Entrenamiento y Simulación:
-    datasets = list_files(DATA_PATH, [".csv", ".json", ".xls", ".xlsx"])
-    dataset_name = st.selectbox("Selecciona un dataset", [""] + datasets)
-
-    if dataset_name != "":
-        df, X, y, meta = load_table(os.path.join(DATA_PATH, dataset_name))
+    if dataset_nombre != "":
+        df, X, y, meta = cargar_tabla(os.path.join(CARPETA_DATOS, dataset_nombre))
         st.subheader("Resumen del dataset")
         st.write(meta)
         st.dataframe(df.head())
 
-        # preprocesamiento académico opcional
+        # Preprocesamiento académico opcional
         if set(["horas_estudio", "asistencia", "participacion"]).issubset(set(df.columns)):
-            if st.checkbox("Aplicar preprocesamiento Académico"):
-                df = preprocess_academic(df)
+            if st.checkbox("Aplicar preprocesamiento académico"):
+                df = preprocesar_academico(df)
                 X = df.iloc[:, :-1].values
                 y = df.iloc[:, -1].values
-                st.success("Preprocesamiento aplicado")
+                st.success("Preprocesamiento aplicado correctamente")
 
-        # split 80/20
+        # División en entrenamiento (80%) y prueba (20%)
         split_idx = int(0.8 * len(df))
         X_train, y_train = X[:split_idx], y[:split_idx]
         X_test, y_test = X[split_idx:], y[split_idx:]
 
+        # -----------------------------
+        # Inicialización de pesos y umbral
+        # -----------------------------
         st.subheader("Inicialización de pesos y umbral")
         if st.button("Inicializar aleatoriamente"):
-            model = Perceptron(n_inputs=X.shape[1])
-            st.session_state['model'] = model
+            modelo = Perceptron(entradas=X.shape[1])
+            st.session_state['modelo'] = modelo
 
-            # Mostrar dimensiones + valores redondeados
-            st.write(f"Matriz de pesos inicial (1 x {X.shape[1]}):")
-            st.write(np.round(model.w.reshape(1, -1), 2))
+            st.write(f"**Matriz de pesos inicial** (1 x {X.shape[1]}):")
+            st.write(np.round(modelo.pesos.reshape(1, -1), 2))
 
-            st.write("Vector umbral:")
-            st.write(np.array([round(model.b, 2)]))
+            st.write("**Vector de umbral:**")
+            st.write(np.array([round(modelo.umbral, 2)]))
 
+            st.info("Pesos inicializados de forma aleatoria en el rango [-1, 1]")
 
+        # -----------------------------
+        # Parámetros de entrenamiento
+        # -----------------------------
         st.subheader("Parámetros de entrenamiento")
-        lr = st.number_input("Tasa de aprendizaje η", min_value=0.01, max_value=1.0, value=0.1, format="%.2f")
-        max_iter = st.number_input("Máx iteraciones", min_value=1, max_value=10000, value=100)
-        error_max = st.number_input("Error máximo permitido (ε)", min_value=0.0, max_value=1.0, value=0.01, format="%.2f")
-        pesos_name = st.text_input("Nombre para guardar pesos", value="pesos_dataset")
+        tasa_aprendizaje = st.number_input("Tasa de aprendizaje (α)", min_value=0.01, max_value=1.0, value=0.1, format="%.2f")
+        max_epocas = st.number_input("Número máximo de épocas", min_value=1, max_value=10000, value=100)
+        error_maximo = st.number_input("Error máximo permitido (ε)", min_value=0.0, max_value=1.0, value=0.01, format="%.2f")
+        nombre_pesos = st.text_input("Nombre para guardar pesos y umbral", value="pesos_dataset.json")
 
-        if st.button("Iniciar entrenamiento") and 'model' in st.session_state:
-            model = st.session_state['model']
-            model.lr = lr
-            model.max_iter = int(max_iter)
-            model.error_threshold = float(error_max)
+        # -----------------------------
+        # Iniciar entrenamiento
+        # -----------------------------
+        if st.button("Iniciar entrenamiento") and 'modelo' in st.session_state:
+            modelo = st.session_state['modelo']
+            modelo.tasa_aprendizaje = tasa_aprendizaje
+            modelo.max_epocas = int(max_epocas)
+            modelo.error_maximo = float(error_maximo)
 
-            st.info("Entrenando...")
-            result = model.train(X_train, y_train, dataset_name=None, verbose=False)
+            st.info("Entrenando el perceptrón...")
+            resultado = modelo.entrenar(X_train, y_train)
 
-            best = result["best_epoch"]
-            st.success(f"Entrenamiento terminado — Época {best['epoch']} RMS = {best['rms']:.2f}")
-            st.write("Pesos óptimos:", np.round(best["weights"], 2))
-            st.write("Umbrales:", round(best["bias"], 2))
+            if resultado["convergio"]:
+                mejor = resultado["mejor_epoca"]
+                st.success(f"✅ El modelo convergió en la época {mejor['epoca']} con RMS = {mejor['error_rms']:.2f}")
+                st.write("**Pesos óptimos:**", np.round(mejor["pesos"], 2))
+                st.write("**Umbral óptimo:**", round(mejor["umbral"], 2))
 
-            fig = plot_rms(result["history"], max_error=error_max, converged_epoch=best['epoch'], dataset_name=dataset_name)
-            st.pyplot(fig)
+                fig = graficar_error(resultado["historia"], error_maximo, mejor['epoca'], dataset_nombre)
+                st.pyplot(fig)
 
-            # evaluar en todo el dataset
-            y_pred, acc = evaluate_model(model, X, y)
-            st.write(f"Accuracy total: {acc*100:.2f}%")
+                y_pred, acc = evaluar_modelo(modelo, X, y)
+                st.write(f"**Exactitud total del modelo:** {acc*100:.2f}%")
 
-            # guardar pesos
-            # fname = model.save(f"{pesos_name}.json", epoch_record=best)
-            # st.success(f"Pesos guardados en {fname}")
-            # guardar pesos en carpeta 'pesos'
-            os.makedirs(WEIGHTS_PATH, exist_ok=True)
-            fname = os.path.join(WEIGHTS_PATH, f"{pesos_name}.json")
-            model.save(fname, epoch_record=best)
-            st.success(f"Pesos y umbrales guardados exitosemente")
+                # Guardar solo si aprendió
+                ruta_guardado = modelo.guardar(nombre_pesos, mejor)
+                st.success(f"Pesos y umbral guardados en {ruta_guardado}")
+            else:
+                st.warning("⚠️ El modelo no logró converger con los parámetros dados. "
+                           "Intente aumentar el número de épocas o ajustar la tasa de aprendizaje.")
 
 
 
-elif mode == "Simulación":
-    st.header("Simulación")
+# =====================================================
+# SIMULACIÓN
+# =====================================================
+elif modo == "Simulación":
+    st.header("Simulación del Perceptrón")
 
-    # datasets = list_files(DATA_PATH, ".csv")
-    # en Entrenamiento y Simulación:
-    datasets = list_files(DATA_PATH, [".csv", ".json", ".xls", ".xlsx"])
-    weights_files = list_files(WEIGHTS_PATH, ".json")
+    datasets = listar_archivos(CARPETA_DATOS, [".csv", ".json", ".xls", ".xlsx"])
+    pesos_archivos = listar_archivos(CARPETA_PESOS, [".json"])
 
-    dataset_name = st.selectbox("Selecciona un dataset", [""] + datasets, key="dataset_sim")
-    weights_file = st.selectbox("Selecciona archivo de pesos", [""] + weights_files, key="weights_sim")
+    dataset_nombre = st.selectbox("Selecciona un dataset", [""] + datasets, key="dataset_sim")
+    pesos_archivo = st.selectbox("Selecciona archivo de pesos", [""] + pesos_archivos, key="pesos_sim")
 
-    if dataset_name != "" and weights_file != "":
+    if dataset_nombre != "" and pesos_archivo != "":
         if st.button("Iniciar simulación"):
-            df, X, y, meta = load_table(os.path.join(DATA_PATH, dataset_name))
+            df, X, y, meta = cargar_tabla(os.path.join(CARPETA_DATOS, dataset_nombre))
             st.subheader("Dataset cargado")
             st.write(meta)
             st.dataframe(df.head())
 
-            model = Perceptron(n_inputs=X.shape[1])
-            model.load(os.path.join(WEIGHTS_PATH, weights_file))
-            st.session_state['sim_model'] = model
-            st.session_state['sim_df'] = df
-            st.session_state['sim_X'] = X
-            st.session_state['sim_y'] = y
+            modelo = Perceptron(entradas=X.shape[1])
+            modelo.cargar(os.path.join(CARPETA_PESOS, pesos_archivo))
+            st.session_state['modelo_sim'] = modelo
+            st.session_state['df_sim'] = df
+            st.session_state['X_sim'] = X
+            st.session_state['y_sim'] = y
 
-        # Solo mostrar resultados si ya hay modelo cargado
-        if 'sim_model' in st.session_state:
-            model = st.session_state['sim_model']
-            df = st.session_state['sim_df']
-            X = st.session_state['sim_X']
-            y = st.session_state['sim_y']
+        # Mostrar resultados si ya hay modelo cargado
+        if 'modelo_sim' in st.session_state:
+            modelo = st.session_state['modelo_sim']
+            df = st.session_state['df_sim']
+            X = st.session_state['X_sim']
+            y = st.session_state['y_sim']
 
-            y_pred, acc = evaluate_model(model, X, y)
-            st.write(f"Accuracy en dataset: {acc*100:.2f}%")
+            y_pred, acc = evaluar_modelo(modelo, X, y)
+            st.write(f"**Exactitud en dataset:** {acc*100:.2f}%")
 
-            result_df = pd.DataFrame(X, columns=df.columns[:-1])
-            result_df["Salida Red"] = y_pred
-            result_df["Salida Deseada"] = y
-            st.dataframe(result_df)
+            resultados_df = pd.DataFrame(X, columns=df.columns[:-1])
+            resultados_df["Salida del Perceptrón"] = y_pred
+            resultados_df["Salida Deseada"] = y
+            st.dataframe(resultados_df)
 
-            st.subheader("Probar patrón manual")
-            inputs = []
-            cols = st.columns(X.shape[1])
+            # Probar un patrón manual
+            st.subheader("Probar un patrón manual")
+            entradas = []
+            columnas = st.columns(X.shape[1])
             for i in range(X.shape[1]):
-                col_name = df.columns[i] if i < len(df.columns) else f"X{i}"
-                with cols[i]:
-                    v = st.number_input(f"{col_name}", value=float(X[0, i]), key=f"input_{i}")
-                    inputs.append(v)
-            if st.button("Calcular salida", key="calc_out"):
-                y_hat = model.forward_single(np.array(inputs))[1]
-                st.write(f"Patrón {list(map(int, inputs))} = {y_hat}")
+                nombre_col = df.columns[i] if i < len(df.columns) else f"X{i}"
+                with columnas[i]:
+                    v = st.number_input(f"{nombre_col}", value=float(X[0, i]), key=f"input_{i}")
+                    entradas.append(v)
 
+            if st.button("Calcular salida", key="calc_out"):
+                salida_predicha, _ = modelo.propagar(np.array(entradas))
+                st.write(f"Patrón {list(map(int, entradas))} → Salida del perceptrón = {salida_predicha}")
